@@ -101,14 +101,14 @@ class RoPE(nn.Module):
         return torch.stack((cos, sin))
 
     def forward(self, x: torch.Tensor, token_positions: torch.Tensor):
-        B, S, D = x.shape
+        og_shape = x.shape
         cos, sin = self._rope_buffer[:, token_positions, :]
 
         x1 = x[..., ::2]
         x2 = x[..., 1::2]
         x1_rot = cos * x1 - sin * x2
         x2_rot = sin * x1 + cos * x2
-        return torch.stack((x1_rot, x2_rot), dim=-1).view(B, S, D)
+        return torch.stack((x1_rot, x2_rot), dim=-1).view(og_shape)
 
 def sdpa(q, k, v, mask=None):
     scale = math.sqrt(q.shape[-1])
@@ -116,5 +116,34 @@ def sdpa(q, k, v, mask=None):
     mask_a = torch.where(mask, a_score, torch.tensor(float('-inf')))
     a_score = softmax(mask_a / scale)
     return einsum(a_score, v, "batch ... seq_q seq_k, batch ... seq_k dv -> batch ... seq_q dv")
+
+
+
+class MultiHeadAttention(nn.Module):
+    def __init__(self, d_model, num_heads, has_rope=False, max_seq_len=0, rope_theta=0):
+        super().__init__()
+        self.d_model = d_model
+        self.num_heads = num_heads
+        self.qkv = Linear(d_model, 3 * d_model)
+        self.o_proj = Linear(d_model, d_model)
+        if has_rope:
+            self.rope = RoPE(rope_theta, d_model // num_heads, max_seq_len)
+
+
+    def forward(self, x, token_positions=None, apply_rope=False):
+        B,S,_ = x.shape
+        qkv = self.qkv(x)
+        mask = torch.tril(torch.ones(S, S, dtype=torch.bool))
+        q = qkv[..., :self.d_model].view(B, S, self.num_heads, -1).transpose(1, 2)
+        if apply_rope:
+            q = self.rope(q, token_positions)
+        k = qkv[..., self.d_model:2 * self.d_model].view(B, S, self.num_heads, -1).transpose(1, 2)
+        if apply_rope:
+            k = self.rope(k, token_positions)
+        v = qkv[..., 2 * self.d_model: 3 * self.d_model].view(B, S, self.num_heads, -1).transpose(1, 2)
+
+        o = sdpa(q, k, v, mask).transpose(1, 2).reshape(B, S, -1)
+        return self.o_proj(o)
+
 
 
