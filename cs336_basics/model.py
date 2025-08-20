@@ -54,6 +54,22 @@ class RMSNorm(nn.Module):
         t = t * torch.rsqrt(torch.mean(t**2, dim=-1, keepdim=True) + self.eps)
         return (t * self.scale).to(dtype)
 
+def silu(x: torch.Tensor):
+    return x * torch.sigmoid(x)
+
+
+class SwiGLU(nn.Module):
+    def __init__(self, d_model, d_ff):
+        super().__init__()
+        self.w1 = Linear(d_in=d_model, d_out=d_ff)
+        self.w2 = Linear(d_in=d_ff, d_out=d_model)
+        self.w3 = Linear(d_in=d_model, d_out=d_ff)
+    
+    def forward(self, x: torch.Tensor):
+        x_gated = self.w1(x)
+        x_linear = self.w3(x)
+        x_swiglu = silu(x_gated) * x_linear
+        return self.w2(x_swiglu)
 
 
 

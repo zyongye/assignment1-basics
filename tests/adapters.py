@@ -95,7 +95,13 @@ def run_swiglu(
     # swiglu.w1.weight.data = w1_weight
     # swiglu.w2.weight.data = w2_weight
     # swiglu.w3.weight.data = w3_weight
-    raise NotImplementedError
+    layer = model.SwiGLU(d_model=d_model, d_ff=d_ff)
+    layer.w1.weight.data = w1_weight
+    layer.w2.weight.data = w2_weight
+    layer.w3.weight.data = w3_weight
+
+    return layer(in_features)
+    
 
 
 def run_scaled_dot_product_attention(
@@ -410,7 +416,8 @@ def run_silu(in_features: Float[Tensor, " ..."]) -> Float[Tensor, " ..."]:
         Float[Tensor,"..."]: of with the same shape as `in_features` with the output of applying
         SiLU to each element.
     """
-    raise NotImplementedError
+    
+    return model.silu(in_features)
 
 
 def run_get_batch(
