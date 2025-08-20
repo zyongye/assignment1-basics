@@ -166,14 +166,51 @@ class TransformerBlock(nn.Module):
         qkv = torch.cat([q, k, v], dim=0)
         self.attn.qkv.weight.data = qkv
     
-    def forward(self, x: torch.Tensor):
+    def forward(self, x: torch.Tensor, positions=None):
         B, S, _ = x.shape
-        positions = torch.arange(S).unsqueeze(0).expand(B, -1)
+        if not positions:
+            positions = torch.arange(S).unsqueeze(0).expand(B, -1)
         x_attn = self.attn(self.pre_attn_norm(x), token_positions=positions, apply_rope=True)
         x = x + x_attn
         x_ffn = self.ffn(self.post_attn_norm(x))
         x = x + x_ffn
         return x
+    
+class TransformerForCausalLM(nn.Module):
+
+    def __init__(self, vocab_size, context_length, d_model, num_layers, num_heads, d_ff, rope_theta):
+        super().__init__()
+        self.num_layers = num_layers
+        self.token_embedding = Embedding(vocab_size, d_model)
+        self.blocks = [TransformerBlock(d_model, num_heads, d_ff, context_length, rope_theta) for 
+                      i in range(num_layers)]
+        self.final_norm = RMSNorm(d_model)
+        self.lm_head = Linear(d_model, vocab_size)
+    
+    def weight_loader(self, weights):
+        self.token_embedding.weight.data = weights["token_embeddings.weight"]
+        self.final_norm.scale.data = weights["ln_final.weight"]
+        self.lm_head.weight.data = weights["lm_head.weight"]
+        for i in range(self.num_layers):
+            per_layer_weights = {
+                "ln1.weight": weights[f"layers.{i}.ln1.weight"],
+                "ln2.weight": weights[f"layers.{i}.ln2.weight"],
+                "ffn.w1.weight": weights[f"layers.{i}.ffn.w1.weight"],
+                "ffn.w2.weight": weights[f"layers.{i}.ffn.w2.weight"],
+                "ffn.w3.weight": weights[f"layers.{i}.ffn.w3.weight"],
+                "attn.output_proj.weight": weights[f"layers.{i}.attn.output_proj.weight"],
+                "attn.q_proj.weight": weights[f"layers.{i}.attn.q_proj.weight"],
+                "attn.k_proj.weight": weights[f"layers.{i}.attn.k_proj.weight"],
+                "attn.v_proj.weight": weights[f"layers.{i}.attn.v_proj.weight"],
+            }
+            self.blocks[i].weight_loader(per_layer_weights)
+    
+    def forward(self, x):
+        x = self.token_embedding(x)
+        for block in self.blocks:
+            x = block(x)
+        x = self.final_norm(x)
+        return self.lm_head(x)
 
 
 
