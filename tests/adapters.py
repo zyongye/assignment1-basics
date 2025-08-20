@@ -9,6 +9,8 @@ import numpy.typing as npt
 import torch
 from torch import Tensor
 
+from cs336_basics import model
+
 
 def run_linear(
     d_in: int,
@@ -29,7 +31,12 @@ def run_linear(
         Float[Tensor, "... d_out"]: The transformed output of your linear module.
     """
 
-    raise NotImplementedError
+    linear_layer = model.Linear(d_in, d_out)
+    state_dict = {
+        'weight': weights,
+    }
+    linear_layer.load_state_dict(state_dict)
+    return linear_layer(in_features)
 
 
 def run_embedding(
