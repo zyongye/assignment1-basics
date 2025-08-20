@@ -145,5 +145,36 @@ class MultiHeadAttention(nn.Module):
         o = sdpa(q, k, v, mask).transpose(1, 2).reshape(B, S, -1)
         return self.o_proj(o)
 
+class TransformerBlock(nn.Module):
+    def __init__(self, d_model, num_heads, d_ff, max_seq_len, theta):
+        super().__init__()
+        self.pre_attn_norm = RMSNorm(d_model)
+        self.attn = MultiHeadAttention(d_model, num_heads, has_rope=True, max_seq_len=max_seq_len, rope_theta=theta)
+        self.post_attn_norm = RMSNorm(d_model)
+        self.ffn = SwiGLU(d_model, d_ff)
+
+    def weight_loader(self, weights):
+        self.pre_attn_norm.scale.data = weights["ln1.weight"]
+        self.post_attn_norm.scale.data = weights["ln2.weight"]
+        self.ffn.w1.weight.data = weights["ffn.w1.weight"]
+        self.ffn.w2.weight.data = weights["ffn.w2.weight"]
+        self.ffn.w3.weight.data = weights["ffn.w3.weight"]
+        self.attn.o_proj.weight.data = weights["attn.output_proj.weight"]
+        q = weights["attn.q_proj.weight"]
+        k = weights["attn.k_proj.weight"]
+        v = weights["attn.v_proj.weight"]
+        qkv = torch.cat([q, k, v], dim=0)
+        self.attn.qkv.weight.data = qkv
+    
+    def forward(self, x: torch.Tensor):
+        B, S, _ = x.shape
+        positions = torch.arange(S).unsqueeze(0).expand(B, -1)
+        x_attn = self.attn(self.pre_attn_norm(x), token_positions=positions, apply_rope=True)
+        x = x + x_attn
+        x_ffn = self.ffn(self.post_attn_norm(x))
+        x = x + x_ffn
+        return x
+
+
 
 
