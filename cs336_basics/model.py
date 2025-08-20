@@ -2,8 +2,10 @@ import math
 
 import torch
 import torch.nn as nn
+import einx
 
-from einops import einsum
+from einops import einsum, rearrange
+
 
 class Linear(nn.Module):
 
@@ -70,8 +72,42 @@ class SwiGLU(nn.Module):
         x_linear = self.w3(x)
         x_swiglu = silu(x_gated) * x_linear
         return self.w2(x_swiglu)
+    
+def softmax(x: torch.Tensor, dim=-1):
+    x = torch.exp(x - x.max(dim=dim, keepdim=True).values)
+    x = x / x.sum(dim=dim, keepdim=True)
+    return x
 
 
+class RoPE(nn.Module):
 
+    def __init__ (self, theta:float, d_k:int, max_seq_len: int, device=None):
+        super().__init__()
+        self.register_buffer(
+            "_rope_buffer", RoPE._init_buffer(
+                theta, d_k, max_seq_len
+            ),
+            persistent=False
+        )
+
+    @staticmethod
+    def _init_buffer(theta, d_k, max_seq_len):
+        d = torch.arange(0, d_k, 2) / d_k
+        freqs = theta ** -d
+        t = torch.arange(max_seq_len)
+
+        freqs = einsum(t, freqs, "t, f -> t f")
+        cos, sin = torch.cos(freqs), torch.sin(freqs)
+        return torch.stack((cos, sin))
+
+    def forward(self, x: torch.Tensor, token_positions: torch.Tensor):
+        B, S, D = x.shape
+        cos, sin = self._rope_buffer[:, token_positions, :]
+
+        x1 = x[..., ::2]
+        x2 = x[..., 1::2]
+        x1_rot = cos * x1 - sin * x2
+        x2_rot = sin * x1 + cos * x2
+        return torch.stack((x1_rot, x2_rot), dim=-1).view(B, S, D)
 
 
