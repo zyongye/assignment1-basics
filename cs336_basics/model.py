@@ -6,6 +6,8 @@ import einx
 
 from einops import einsum, rearrange
 
+from .util import softmax
+
 
 class Linear(nn.Module):
 
@@ -73,12 +75,6 @@ class SwiGLU(nn.Module):
         x_swiglu = silu(x_gated) * x_linear
         return self.w2(x_swiglu)
     
-def softmax(x: torch.Tensor, dim=-1):
-    x = torch.exp(x - x.max(dim=dim, keepdim=True).values)
-    x = x / x.sum(dim=dim, keepdim=True)
-    return x
-
-
 class RoPE(nn.Module):
 
     def __init__ (self, theta:float, d_k:int, max_seq_len: int, device=None):
