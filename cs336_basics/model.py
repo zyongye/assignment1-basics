@@ -110,4 +110,11 @@ class RoPE(nn.Module):
         x2_rot = sin * x1 + cos * x2
         return torch.stack((x1_rot, x2_rot), dim=-1).view(B, S, D)
 
+def sdpa(q, k, v, mask=None):
+    scale = math.sqrt(q.shape[-1])
+    a_score = einsum(q, k, "batch ... seq_q dk, batch ... seq_k dk -> batch ... seq_q seq_k")
+    mask_a = torch.where(mask, a_score, torch.tensor(float('-inf')))
+    a_score = softmax(mask_a / scale)
+    return einsum(a_score, v, "batch ... seq_q seq_k, batch ... seq_k dv -> batch ... seq_q dv")
+
 
