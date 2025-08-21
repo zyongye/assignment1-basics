@@ -42,6 +42,13 @@ class Embedding(nn.Module):
     def forward(self, token_ids: torch.Tensor)-> torch.Tensor:
         return self.weight[token_ids]
 
+"""
+Q: why we need normalization in general:
+A: prevent gradient from vanish or explode, stablize training
+   smoothier optimization landscape
+Q: Pre-layer norm vs post-layer norm:
+A: More stable gradient
+"""
 class RMSNorm(nn.Module):
     def __init__(self, d_model: int, eps: float = 1e-5, device=None, dtype=None):
         super().__init__()
